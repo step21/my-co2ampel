@@ -5,7 +5,8 @@
 #include "fonts-custom.h"
 #include <Preferences.h>
 #include "uptime_formatter.h"
-#include "SimpleDHT.h"
+//#include "SimpleDHT.h"
+#include <AHTxx.h>
 
 // Grenzwerte für die CO2 Werte für grün und gelb, alles überhalb davon bedeutet rot
 #define GREEN_CO2 800
@@ -39,16 +40,23 @@
 
 // DHT pin
 int pinDHT22 = 35;
+int DHT20_PIN = 35;
 int buzzerPin = 12;
-SimpleDHT22 dht22(pinDHT22);
-
+//SimpleDHT22 dht22(pinDHT22);
+AHTxx aht20(AHTXX_ADDRESS_X38, AHT2x_SENSOR); // sensor address, sensor type
+float DHTvalue; // to store T/RH value
+float DHThum;
 Preferences preferences;
 MHZ19 myMHZ19;
 HardwareSerial mySerial(1);
 SSD1306Wire  display(0x3c, SDA_PIN, SCL_PIN);
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, LED_PIN, NEO_GRB + NEO_KHZ800);
  
-String ampelversion = "0.51";
+String ampelversion = "0.6";
+
+const uint8_t temperature_icon[8] PROGMEM = {0x04, 0x0A, 0x0A, 0x0A, 0x0A, 0x1F, 0x1F, 0x0E}; //PROGMEM saves variable to flash & keeps dynamic memory free
+const uint8_t humidity_icon[8]    PROGMEM = {0x04, 0x0E, 0x0E, 0x1F, 0x1F, 0x1F, 0x0E, 0x00};
+const uint8_t plus_minus_icon[8]  PROGMEM = {0x00, 0x04, 0x0E, 0x04, 0x00, 0x0E, 0x00, 0x00};
 
 int lastvals[120];
 int dheight;
@@ -116,7 +124,14 @@ void setup() {
   Serial.begin(115200);
   Serial.println("Starte...");
   Serial.print("CO2-Ampel Firmware: ");Serial.println(ampelversion);
-
+  
+  /* AHT20 connection check */
+  while (aht20.begin() != true) {
+    // lcd.print(F("AHT20 Error"))  
+    Serial.println(F("AHT20 not connected or failed to load callibration coefficient")); // F() saves string to flash and keeps dynamic memory free
+    delay(5000);
+  }
+  Serial.println(F("AHT20 OK"));
   // Ab hier Bootmodus initialisieren und festlegen
   preferences.begin("co2", false);
   currentBootMode = preferences.getUInt("cal", BOOT_UNKNOWN);  // Aktuellen Boot-Mode lesen und speichern
@@ -289,7 +304,13 @@ void updateDisplayCO2(int co2) {
     display.drawString(64 ,0 , String(co2));
     delay(5000);
     display.clear();
-    display.drawString(64, 0, String(myMHZ19.getTemperature()));
+    DHTvalue = aht20.readTemperature(); // read some bytes over i2c
+    DHThum = aht20.readHumidity();
+    if (DHTvalue != AHTXX_ERROR) Serial.println("DHTtemperature: " + String(DHTvalue));
+    else Serial.println(F("AHTXXError - xxx"));
+    if (DHThum != AHTXX_ERROR) Serial.println("Humidity: " + String(DHThum));
+    else Serial.println("AHTXXError - xxx");
+    display.drawString(64, 0, String(DHTvalue) + " °C");
     delay(5000);
     display.clear();
     display.display();
@@ -305,9 +326,9 @@ void loop() {
   static int safezone = false;
 
   int co2;
-  byte DHTtemperature = 0;
-  byte DHThumidity = 0;
-  int err = SimpleDHTErrSuccess;
+  //byte DHTtemperature = 0;
+  //byte DHThumidity = 0;
+  //int err = SimpleDHTErrSuccess;
   // Nur für die ersten 10 Sekunden wichtig,
   if ( (!safezone) & (millis() > 10000) ) {
     Serial.println("=== 10 Sekunden im Betrieb, nächster Boot im Messmodus ===");
