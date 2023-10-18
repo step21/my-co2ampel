@@ -5,11 +5,12 @@
 #include "fonts-custom.h"
 #include <Preferences.h>
 #include "uptime_formatter.h"
+#include "SimpleDHT.h"
 
 // Grenzwerte für die CO2 Werte für grün und gelb, alles überhalb davon bedeutet rot
 #define GREEN_CO2 800
 #define YELLOW_CO2 1000
-
+#define buzzer_PIN 12
 // CO2 Mess-Intervall in Milisekunden
 #define CO2_INTERVAL 15*1000
 // Display Update-Intervall in Milisekunden
@@ -36,13 +37,18 @@
 // Anzahl der angeschlossenen LEDs am Ring
 #define NUMPIXELS 8
 
+// DHT pin
+int pinDHT22 = 35;
+int buzzerPin = 12;
+SimpleDHT22 dht22(pinDHT22);
+
 Preferences preferences;
 MHZ19 myMHZ19;
 HardwareSerial mySerial(1);
 SSD1306Wire  display(0x3c, SDA_PIN, SCL_PIN);
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, LED_PIN, NEO_GRB + NEO_KHZ800);
  
-String ampelversion = "0.50";
+String ampelversion = "0.51";
 
 int lastvals[120];
 int dheight;
@@ -165,7 +171,10 @@ void setup() {
   Serial.print("ABC Status: "); myMHZ19.getABC() ? Serial.println("ON") :  Serial.println("OFF");
   Serial.print("read EEPROM value: ");  Serial.println(currentBootMode);
   Serial.print("First CO2 value (should be 400): ");  Serial.println(readCO2());
- 
+
+  // buzzer pin einrichter
+  pinMode(buzzerPin, OUTPUT);
+
   // Liste der Messwerte mit "-1" befüllen ("-1" wird beinm Graph nicht gezeichnet)
   for (int x = 0; x <= 119; x = x + 1) {
     lastvals[x] = -1;
@@ -278,6 +287,11 @@ void updateDisplayCO2(int co2) {
     display.setFont(Cousine_Regular_54);
     display.setTextAlignment(TEXT_ALIGN_CENTER);
     display.drawString(64 ,0 , String(co2));
+    delay(5000);
+    display.clear();
+    display.drawString(64, 0, String(myMHZ19.getTemperature()));
+    delay(5000);
+    display.clear();
     display.display();
     
     // Fertig mit update; Zeitpunkt für das nächste Update speichern
@@ -291,7 +305,9 @@ void loop() {
   static int safezone = false;
 
   int co2;
-  
+  byte DHTtemperature = 0;
+  byte DHThumidity = 0;
+  int err = SimpleDHTErrSuccess;
   // Nur für die ersten 10 Sekunden wichtig,
   if ( (!safezone) & (millis() > 10000) ) {
     Serial.println("=== 10 Sekunden im Betrieb, nächster Boot im Messmodus ===");
@@ -325,9 +341,19 @@ void loop() {
         currentBootMode = BOOT_NORMAL;  //Fertig, ab jetzt kann es normal weitergehen
       }
     } else {
+      /* if ((err = dht22.read(&DHTtemperature, &DHThumidity, NULL)) != SimpleDHTErrSuccess) {
+         Serial.print("Read DHT22 failed, err="); Serial.print(SimpleDHTErrCode(err));
+        Serial.print(","); Serial.println(SimpleDHTErrDuration(err)); delay(2000);
+        return;
+        } */
       // Achtung: readCO2() liefer nur alle "INTERVAL" ms ein neuen Wert, der alte wird aber zwischengespeichert
       co2 = readCO2();
-  
+    /* Serial.print((int)DHTtemperature); Serial.print(" *C, ");
+      Serial.print((int)DHThumidity); Serial.println(" RH%"); */
+      digitalWrite (buzzerPin, HIGH);
+      delay (500);
+      digitalWrite (buzzerPin, LOW);
+      delay (500);
       // Update Display
       updateDisplayCO2(co2);
 
